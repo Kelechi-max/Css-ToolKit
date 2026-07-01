@@ -1,0 +1,6 @@
+{
+  "name": "CSS Toolkit",
+  "description": "Generate beautiful Glassmorphism, Sliders, Sticky Headers, Shadows, Gradients, and Loaders instantly. Works completely offline!",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
