@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,20 +79,30 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.ScrollState
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -100,8 +111,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import com.example.ui.CssCodeGenerator
 import com.example.ui.MainViewModel
 import com.example.ui.components.CustomBoxShadowPreview
@@ -154,6 +167,7 @@ fun CssToolkitApp(
     val context = LocalContext.current
 
     var showPrivacyDialog by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
 
     // Resolve compiled CSS & HTML
     val codes = remember(activeTool, settings) {
@@ -249,7 +263,17 @@ fun CssToolkitApp(
         }
     }
 
-    val activeOutputText = if (activeTab == "css") codes.first else codes.second
+    val hasCustomCss = viewModel.getBool("has_custom_css_$activeTool", settings)
+    val hasCustomHtml = viewModel.getBool("has_custom_html_$activeTool", settings)
+
+    val currentCustomCss = viewModel.getStr("custom_css_$activeTool", settings)
+    val currentCustomHtml = viewModel.getStr("custom_html_$activeTool", settings)
+
+    val activeOutputText = if (activeTab == "css") {
+        if (hasCustomCss) currentCustomCss else codes.first
+    } else {
+        if (hasCustomHtml) currentCustomHtml else codes.second
+    }
 
     fun copyToClipboard(text: String, label: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -333,8 +357,26 @@ fun CssToolkitApp(
                             CodeOutputSection(
                                 activeTab = activeTab,
                                 activeOutputText = activeOutputText,
+                                onValueChange = { newVal ->
+                                    if (activeTab == "css") {
+                                        viewModel.updateSetting("custom_css_$activeTool", newVal)
+                                        viewModel.updateSetting("has_custom_css_$activeTool", "true")
+                                    } else {
+                                        viewModel.updateSetting("custom_html_$activeTool", newVal)
+                                        viewModel.updateSetting("has_custom_html_$activeTool", "true")
+                                    }
+                                },
                                 onTabSelect = { viewModel.selectTab(it) },
                                 onCopyClick = { copyToClipboard(activeOutputText, activeTab.uppercase()) },
+                                onResetClick = {
+                                    if (activeTab == "css") {
+                                        viewModel.updateSetting("has_custom_css_$activeTool", "false")
+                                    } else {
+                                        viewModel.updateSetting("has_custom_html_$activeTool", "false")
+                                    }
+                                },
+                                onExportClick = { showExportDialog = true },
+                                hasCustom = if (activeTab == "css") hasCustomCss else hasCustomHtml,
                                 modifier = Modifier
                                     .height(240.dp)
                                     .fillMaxWidth()
@@ -391,8 +433,26 @@ fun CssToolkitApp(
                     CodeOutputSection(
                         activeTab = activeTab,
                         activeOutputText = activeOutputText,
+                        onValueChange = { newVal ->
+                            if (activeTab == "css") {
+                                viewModel.updateSetting("custom_css_$activeTool", newVal)
+                                viewModel.updateSetting("has_custom_css_$activeTool", "true")
+                            } else {
+                                viewModel.updateSetting("custom_html_$activeTool", newVal)
+                                viewModel.updateSetting("has_custom_html_$activeTool", "true")
+                            }
+                        },
                         onTabSelect = { viewModel.selectTab(it) },
                         onCopyClick = { copyToClipboard(activeOutputText, activeTab.uppercase()) },
+                        onResetClick = {
+                            if (activeTab == "css") {
+                                viewModel.updateSetting("has_custom_css_$activeTool", "false")
+                            } else {
+                                viewModel.updateSetting("has_custom_html_$activeTool", "false")
+                            }
+                        },
+                        onExportClick = { showExportDialog = true },
+                        hasCustom = if (activeTab == "css") hasCustomCss else hasCustomHtml,
                         modifier = Modifier
                             .height(210.dp)
                             .fillMaxWidth()
@@ -406,6 +466,17 @@ fun CssToolkitApp(
     // Privacy Policy Dialog
     if (showPrivacyDialog) {
         PrivacyPolicyDialog(onDismiss = { showPrivacyDialog = false })
+    }
+
+    // Export Project Bundle Dialog
+    if (showExportDialog) {
+        val activeCss = if (hasCustomCss) currentCustomCss else codes.first
+        val activeHtml = if (hasCustomHtml) currentCustomHtml else codes.second
+        ExportProjectBundleDialog(
+            css = activeCss,
+            html = activeHtml,
+            onDismiss = { showExportDialog = false }
+        )
     }
 }
 
@@ -675,35 +746,308 @@ fun WorkspaceHeader(activeTool: String) {
 }
 
 @Composable
+fun PreviewItem(
+    activeTool: String,
+    settings: Map<String, String>,
+    viewModel: MainViewModel
+) {
+    when (activeTool) {
+        "glass" -> {
+            GlassmorphismCard(
+                blurVal = viewModel.getFloat("glass_blur", settings),
+                opacityVal = viewModel.getFloat("glass_opacity", settings),
+                saturationVal = viewModel.getFloat("glass_saturation", settings),
+                radiusVal = viewModel.getFloat("glass_radius", settings),
+                colorHex = viewModel.getStr("glass_color", settings),
+                darkText = viewModel.getBool("glass_dark_text", settings),
+                bgUrl = viewModel.getStr("glass_bg_url", settings)
+            )
+        }
+        "slider" -> {
+            Box(modifier = Modifier.fillMaxWidth().heightIn(max = 130.dp)) {
+                InteractiveImageSlider(
+                    urlsString = viewModel.getStr("slider_urls", settings),
+                    speed = viewModel.getFloat("slider_speed", settings),
+                    radius = viewModel.getFloat("slider_radius", settings),
+                    showArrows = viewModel.getBool("slider_show_arrows", settings)
+                )
+            }
+        }
+        "header" -> {
+            MockStickyHeaderViewport(
+                bgColorHex = viewModel.getStr("header_bg_color", settings),
+                blurVal = viewModel.getFloat("header_blur", settings),
+                heightVal = viewModel.getFloat("header_height", settings),
+                shadowVal = viewModel.getFloat("header_shadow", settings),
+                borderBottom = viewModel.getBool("header_border_bottom", settings),
+                brandText = viewModel.getStr("header_brand_text", settings),
+                navLinks = viewModel.getStr("header_nav_links", settings)
+            )
+        }
+        "shadow" -> {
+            CustomBoxShadowPreview(
+                offsetX = viewModel.getFloat("shadow_offset_x", settings),
+                offsetY = viewModel.getFloat("shadow_offset_y", settings),
+                blurVal = viewModel.getFloat("shadow_blur", settings),
+                spreadVal = viewModel.getFloat("shadow_spread", settings),
+                colorHex = viewModel.getStr("shadow_color", settings),
+                opacityVal = viewModel.getFloat("shadow_opacity", settings),
+                inset = viewModel.getBool("shadow_inset", settings),
+                radiusVal = viewModel.getFloat("shadow_radius", settings)
+            )
+        }
+        "gradient" -> {
+            val gType = viewModel.getStr("gradient_type", settings)
+            val c1 = viewModel.getStr("gradient_color1", settings)
+            val c2 = viewModel.getStr("gradient_color2", settings)
+            val use3 = viewModel.getBool("gradient_use_color3", settings)
+            val c3 = viewModel.getStr("gradient_color3", settings)
+            val angle = viewModel.getFloat("gradient_angle", settings)
+            
+            val stop1 = viewModel.getFloat("gradient_stop1", settings) / 100f
+            val stop2 = viewModel.getFloat("gradient_stop2", settings) / 100f
+            val stop3 = viewModel.getFloat("gradient_stop3", settings) / 100f
+
+            val color1 = try { Color(android.graphics.Color.parseColor(c1)) } catch(e: Exception) { Color(0xFF4FACFE) }
+            val color2 = try { Color(android.graphics.Color.parseColor(c2)) } catch(e: Exception) { Color(0xFF00F2FE) }
+            val color3 = try { Color(android.graphics.Color.parseColor(c3)) } catch(e: Exception) { Color.Black }
+
+            val colorStops = if (use3) {
+                arrayOf(
+                    stop1.coerceIn(0f, 1f) to color1,
+                    stop2.coerceIn(0f, 1f) to color2,
+                    stop3.coerceIn(0f, 1f) to color3
+                ).apply { sortBy { it.first } }
+            } else {
+                arrayOf(
+                    stop1.coerceIn(0f, 1f) to color1,
+                    stop2.coerceIn(0f, 1f) to color2
+                ).apply { sortBy { it.first } }
+            }
+
+            val brush = when (gType) {
+                "linear-gradient" -> {
+                    val rad = Math.toRadians(angle.toDouble())
+                    val endX = Math.cos(rad).toFloat() * 1000f + 500f
+                    val endY = Math.sin(rad).toFloat() * 1000f + 500f
+                    Brush.linearGradient(
+                        colorStops = colorStops,
+                        start = Offset(500f - Math.cos(rad).toFloat() * 500f, 500f - Math.sin(rad).toFloat() * 500f),
+                        end = Offset(endX, endY)
+                    )
+                }
+                "radial-gradient" -> {
+                    Brush.radialGradient(colorStops = colorStops)
+                }
+                else -> {
+                    Brush.sweepGradient(colorStops = colorStops)
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(150.dp, 90.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(brush),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "GRADIENT",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        "button" -> {
+            val label = viewModel.getStr("button_label", settings)
+            val style = viewModel.getStr("button_style", settings)
+            val bgColHex = viewModel.getStr("button_bg_color", settings)
+            val textColHex = viewModel.getStr("button_text_color", settings)
+            val radius = viewModel.getFloat("button_radius", settings)
+            val fSize = viewModel.getFloat("button_font_size", settings)
+            val padH = viewModel.getFloat("button_padding_h", settings)
+            val padV = viewModel.getFloat("button_padding_v", settings)
+            val hoverFx = viewModel.getStr("button_hover_fx", settings)
+
+            val bgColor = try { Color(android.graphics.Color.parseColor(bgColHex)) } catch(e: Exception) { Color(0xFF3B82F6) }
+            val textColor = try { Color(android.graphics.Color.parseColor(textColHex)) } catch(e: Exception) { Color.White }
+
+            val isOutline = style == "outline"
+            val isGhost = style == "ghost"
+            val isGrad = style == "gradient"
+
+            val interactionSource = remember { MutableInteractionSource() }
+            val isPressed by interactionSource.collectIsPressedAsState()
+            val isHovered by interactionSource.collectIsHoveredAsState()
+            val isEffectActive = isPressed || isHovered
+
+            val scaleFactor = animateFloatAsState(
+                targetValue = if (isEffectActive && hoverFx == "scale") 1.08f else 1.0f,
+                label = "scale"
+            )
+            val opacityVal = animateFloatAsState(
+                targetValue = if (isEffectActive && hoverFx == "lighten") 0.75f else 1.0f,
+                label = "opacity"
+            )
+            val shadowElevation = animateFloatAsState(
+                targetValue = if (isEffectActive && hoverFx == "shadow") 12f else 0f,
+                label = "shadow"
+            )
+
+            Box(
+                modifier = Modifier
+                    .graphicsLayer(
+                        scaleX = scaleFactor.value,
+                        scaleY = scaleFactor.value,
+                        alpha = opacityVal.value
+                    )
+                    .shadow(
+                        elevation = shadowElevation.value.dp,
+                        shape = RoundedCornerShape(radius.dp),
+                        clip = false
+                    )
+                    .clip(RoundedCornerShape(radius.dp))
+                    .then(
+                        when {
+                            isOutline -> Modifier.border(2.dp, bgColor, RoundedCornerShape(radius.dp))
+                            isGrad -> Modifier.background(
+                                Brush.linearGradient(colors = listOf(bgColor, Color(0xFF555555)))
+                            )
+                            isGhost -> Modifier
+                            else -> Modifier.background(bgColor)
+                        }
+                    )
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = androidx.compose.foundation.LocalIndication.current
+                    ) { /* Simulate action click */ }
+                    .padding(horizontal = (padH * 0.7f).dp, vertical = (padV * 0.7f).dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = label,
+                    color = if (isOutline || isGhost) bgColor else textColor,
+                    fontSize = (fSize * 0.8f).sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        "ticker" -> {
+            val itemsString = viewModel.getStr("ticker_items", settings)
+            val tickerBg = viewModel.getStr("ticker_bg_color", settings)
+            val tickerText = viewModel.getStr("ticker_text_color", settings)
+            val fSize = viewModel.getFloat("ticker_font_size", settings)
+            val gap = viewModel.getFloat("ticker_gap", settings)
+
+            val bgCol = try { Color(android.graphics.Color.parseColor(tickerBg)) } catch(e: Exception) { Color(0xFF3B82F6) }
+            val textCol = try { Color(android.graphics.Color.parseColor(tickerText)) } catch(e: Exception) { Color.White }
+
+            val itemsList = itemsString.split("\n").filter { it.trim().isNotEmpty() }
+            val marqueeString = if (itemsList.isNotEmpty()) {
+                (itemsList + itemsList).joinToString(" ".repeat((gap / 6f).toInt().coerceAtLeast(3)))
+            } else {
+                "No Ticker Items"
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(bgCol)
+                    .padding(vertical = 8.dp, horizontal = 6.dp)
+            ) {
+                Text(
+                    text = marqueeString,
+                    color = textCol,
+                    fontSize = (fSize * 0.8f).sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
+                )
+            }
+        }
+        "loader" -> {
+            LoaderPreview(
+                style = viewModel.getStr("loader_style", settings),
+                colorHex = viewModel.getStr("loader_color", settings),
+                size = viewModel.getFloat("loader_size", settings) * 0.7f,
+                speed = viewModel.getFloat("loader_speed", settings),
+                strokeWidth = viewModel.getFloat("loader_stroke", settings)
+            )
+        }
+    }
+}
+
+@Composable
 fun LivePreviewBox(
     activeTool: String,
     settings: Map<String, String>,
     viewModel: MainViewModel
 ) {
+    var previewMode by remember { mutableStateOf("single") } // "single" or "multi"
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Preview Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color(0xFF1E1E1E))
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(
-                imageVector = Icons.Default.Monitor,
-                contentDescription = "Preview",
-                tint = Color(0xFF888888),
-                modifier = Modifier.size(14.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "LIVE PREVIEW",
-                color = Color(0xFF888888),
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Monitor,
+                    contentDescription = "Preview",
+                    tint = Color(0xFF888888),
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "LIVE PREVIEW",
+                    color = Color(0xFF888888),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+            }
+            
+            if (activeTool != "guide") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "SINGLE",
+                        color = if (previewMode == "single") Color.White else Color.Gray,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clickable { previewMode = "single" }
+                            .background(if (previewMode == "single") Color(0xFF2E2E2E) else Color.Transparent, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    )
+                    Text(
+                        text = "RESPONSIVE DEVS",
+                        color = if (previewMode == "multi") Color.White else Color.Gray,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clickable { previewMode = "multi" }
+                            .background(if (previewMode == "multi") Color(0xFF2E2E2E) else Color.Transparent, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    )
+                }
+            }
         }
 
         // Preview Element Canvas
@@ -712,7 +1056,6 @@ fun LivePreviewBox(
                 .weight(1f)
                 .fillMaxWidth()
                 .drawBehind {
-                    // Draw designer grid/checkers background pattern
                     val sizePx = 16.dp.toPx()
                     for (x in 0 until (size.width / sizePx).toInt() + 1) {
                         for (y in 0 until (size.height / sizePx).toInt() + 1) {
@@ -726,192 +1069,295 @@ fun LivePreviewBox(
                         }
                     }
                 }
-                .padding(24.dp),
+                .padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
-            when (activeTool) {
-                "glass" -> {
-                    GlassmorphismCard(
-                        blurVal = viewModel.getFloat("glass_blur", settings),
-                        opacityVal = viewModel.getFloat("glass_opacity", settings),
-                        saturationVal = viewModel.getFloat("glass_saturation", settings),
-                        radiusVal = viewModel.getFloat("glass_radius", settings),
-                        colorHex = viewModel.getStr("glass_color", settings),
-                        darkText = viewModel.getBool("glass_dark_text", settings),
-                        bgUrl = viewModel.getStr("glass_bg_url", settings)
-                    )
-                }
-                "slider" -> {
-                    InteractiveImageSlider(
-                        urlsString = viewModel.getStr("slider_urls", settings),
-                        speed = viewModel.getFloat("slider_speed", settings),
-                        radius = viewModel.getFloat("slider_radius", settings),
-                        showArrows = viewModel.getBool("slider_show_arrows", settings)
-                    )
-                }
-                "header" -> {
-                    MockStickyHeaderViewport(
-                        bgColorHex = viewModel.getStr("header_bg_color", settings),
-                        blurVal = viewModel.getFloat("header_blur", settings),
-                        heightVal = viewModel.getFloat("header_height", settings),
-                        shadowVal = viewModel.getFloat("header_shadow", settings),
-                        borderBottom = viewModel.getBool("header_border_bottom", settings),
-                        brandText = viewModel.getStr("header_brand_text", settings),
-                        navLinks = viewModel.getStr("header_nav_links", settings)
-                    )
-                }
-                "shadow" -> {
-                    CustomBoxShadowPreview(
-                        offsetX = viewModel.getFloat("shadow_offset_x", settings),
-                        offsetY = viewModel.getFloat("shadow_offset_y", settings),
-                        blurVal = viewModel.getFloat("shadow_blur", settings),
-                        spreadVal = viewModel.getFloat("shadow_spread", settings),
-                        colorHex = viewModel.getStr("shadow_color", settings),
-                        opacityVal = viewModel.getFloat("shadow_opacity", settings),
-                        inset = viewModel.getBool("shadow_inset", settings),
-                        radiusVal = viewModel.getFloat("shadow_radius", settings)
-                    )
-                }
-                "gradient" -> {
-                    val gType = viewModel.getStr("gradient_type", settings)
-                    val c1 = viewModel.getStr("gradient_color1", settings)
-                    val c2 = viewModel.getStr("gradient_color2", settings)
-                    val use3 = viewModel.getBool("gradient_use_color3", settings)
-                    val c3 = viewModel.getStr("gradient_color3", settings)
-                    val angle = viewModel.getFloat("gradient_angle", settings)
+            if (activeTool == "guide") {
+                GuidelinesPreviewSection(viewModel = viewModel)
+            } else if (previewMode == "multi") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Mobile Device
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("MOBILE (375PX)", color = Color.Gray, fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        Box(
+                            modifier = Modifier
+                                .size(140.dp, 210.dp)
+                                .border(1.5.dp, Color(0xFF333333), RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF0C0C0C))
+                                .padding(8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            PreviewItem(activeTool, settings, viewModel)
+                        }
+                    }
 
-                    val color1 = try { Color(android.graphics.Color.parseColor(c1)) } catch(e: Exception) { Color(0xFF4FACFE) }
-                    val color2 = try { Color(android.graphics.Color.parseColor(c2)) } catch(e: Exception) { Color(0xFF00F2FE) }
-                    val color3 = try { Color(android.graphics.Color.parseColor(c3)) } catch(e: Exception) { Color.Black }
+                    // Tablet Device
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("TABLET (768PX)", color = Color.Gray, fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        Box(
+                            modifier = Modifier
+                                .size(230.dp, 210.dp)
+                                .border(1.5.dp, Color(0xFF333333), RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF0C0C0C))
+                                .padding(8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            PreviewItem(activeTool, settings, viewModel)
+                        }
+                    }
 
-                    val colorsList = if (use3) listOf(color1, color2, color3) else listOf(color1, color2)
+                    // Desktop Device
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("DESKTOP (1200PX)", color = Color.Gray, fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        Box(
+                            modifier = Modifier
+                                .size(330.dp, 210.dp)
+                                .border(1.5.dp, Color(0xFF333333), RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF0C0C0C))
+                                .padding(8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            PreviewItem(activeTool, settings, viewModel)
+                        }
+                    }
+                }
+            } else {
+                when (activeTool) {
+                    "glass" -> {
+                        GlassmorphismCard(
+                            blurVal = viewModel.getFloat("glass_blur", settings),
+                            opacityVal = viewModel.getFloat("glass_opacity", settings),
+                            saturationVal = viewModel.getFloat("glass_saturation", settings),
+                            radiusVal = viewModel.getFloat("glass_radius", settings),
+                            colorHex = viewModel.getStr("glass_color", settings),
+                            darkText = viewModel.getBool("glass_dark_text", settings),
+                            bgUrl = viewModel.getStr("glass_bg_url", settings)
+                        )
+                    }
+                    "slider" -> {
+                        InteractiveImageSlider(
+                            urlsString = viewModel.getStr("slider_urls", settings),
+                            speed = viewModel.getFloat("slider_speed", settings),
+                            radius = viewModel.getFloat("slider_radius", settings),
+                            showArrows = viewModel.getBool("slider_show_arrows", settings)
+                        )
+                    }
+                    "header" -> {
+                        MockStickyHeaderViewport(
+                            bgColorHex = viewModel.getStr("header_bg_color", settings),
+                            blurVal = viewModel.getFloat("header_blur", settings),
+                            heightVal = viewModel.getFloat("header_height", settings),
+                            shadowVal = viewModel.getFloat("header_shadow", settings),
+                            borderBottom = viewModel.getBool("header_border_bottom", settings),
+                            brandText = viewModel.getStr("header_brand_text", settings),
+                            navLinks = viewModel.getStr("header_nav_links", settings)
+                        )
+                    }
+                    "shadow" -> {
+                        CustomBoxShadowPreview(
+                            offsetX = viewModel.getFloat("shadow_offset_x", settings),
+                            offsetY = viewModel.getFloat("shadow_offset_y", settings),
+                            blurVal = viewModel.getFloat("shadow_blur", settings),
+                            spreadVal = viewModel.getFloat("shadow_spread", settings),
+                            colorHex = viewModel.getStr("shadow_color", settings),
+                            opacityVal = viewModel.getFloat("shadow_opacity", settings),
+                            inset = viewModel.getBool("shadow_inset", settings),
+                            radiusVal = viewModel.getFloat("shadow_radius", settings)
+                        )
+                    }
+                    "gradient" -> {
+                        val gType = viewModel.getStr("gradient_type", settings)
+                        val c1 = viewModel.getStr("gradient_color1", settings)
+                        val c2 = viewModel.getStr("gradient_color2", settings)
+                        val use3 = viewModel.getBool("gradient_use_color3", settings)
+                        val c3 = viewModel.getStr("gradient_color3", settings)
+                        val angle = viewModel.getFloat("gradient_angle", settings)
+                        
+                        val stop1 = viewModel.getFloat("gradient_stop1", settings) / 100f
+                        val stop2 = viewModel.getFloat("gradient_stop2", settings) / 100f
+                        val stop3 = viewModel.getFloat("gradient_stop3", settings) / 100f
 
-                    val brush = when (gType) {
-                        "linear-gradient" -> {
-                            // Calculate simple angles
-                            val rad = Math.toRadians(angle.toDouble())
-                            val endX = Math.cos(rad).toFloat() * 1000f + 500f
-                            val endY = Math.sin(rad).toFloat() * 1000f + 500f
-                            Brush.linearGradient(
-                                colors = colorsList,
-                                start = Offset(500f - Math.cos(rad).toFloat() * 500f, 500f - Math.sin(rad).toFloat() * 500f),
-                                end = Offset(endX, endY)
+                        val color1 = try { Color(android.graphics.Color.parseColor(c1)) } catch(e: Exception) { Color(0xFF4FACFE) }
+                        val color2 = try { Color(android.graphics.Color.parseColor(c2)) } catch(e: Exception) { Color(0xFF00F2FE) }
+                        val color3 = try { Color(android.graphics.Color.parseColor(c3)) } catch(e: Exception) { Color.Black }
+
+                        val colorStops = if (use3) {
+                            arrayOf(
+                                stop1.coerceIn(0f, 1f) to color1,
+                                stop2.coerceIn(0f, 1f) to color2,
+                                stop3.coerceIn(0f, 1f) to color3
+                            ).apply { sortBy { it.first } }
+                        } else {
+                            arrayOf(
+                                stop1.coerceIn(0f, 1f) to color1,
+                                stop2.coerceIn(0f, 1f) to color2
+                            ).apply { sortBy { it.first } }
+                        }
+
+                        val brush = when (gType) {
+                            "linear-gradient" -> {
+                                val rad = Math.toRadians(angle.toDouble())
+                                val endX = Math.cos(rad).toFloat() * 1000f + 500f
+                                val endY = Math.sin(rad).toFloat() * 1000f + 500f
+                                Brush.linearGradient(
+                                    colorStops = colorStops,
+                                    start = Offset(500f - Math.cos(rad).toFloat() * 500f, 500f - Math.sin(rad).toFloat() * 500f),
+                                    end = Offset(endX, endY)
+                                )
+                            }
+                            "radial-gradient" -> {
+                                Brush.radialGradient(colorStops = colorStops)
+                            }
+                            else -> {
+                                Brush.sweepGradient(colorStops = colorStops)
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(240.dp, 140.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(brush),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "GRADIENT",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                textAlign = TextAlign.Center
                             )
                         }
-                        "radial-gradient" -> {
-                            Brush.radialGradient(colors = colorsList)
-                        }
-                        else -> {
-                            Brush.sweepGradient(colors = colorsList)
-                        }
                     }
+                    "button" -> {
+                        val label = viewModel.getStr("button_label", settings)
+                        val style = viewModel.getStr("button_style", settings)
+                        val bgColHex = viewModel.getStr("button_bg_color", settings)
+                        val textColHex = viewModel.getStr("button_text_color", settings)
+                        val radius = viewModel.getFloat("button_radius", settings)
+                        val fSize = viewModel.getFloat("button_font_size", settings)
+                        val padH = viewModel.getFloat("button_padding_h", settings)
+                        val padV = viewModel.getFloat("button_padding_v", settings)
+                        val hoverFx = viewModel.getStr("button_hover_fx", settings)
 
-                    Box(
-                        modifier = Modifier
-                            .size(240.dp, 140.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(brush),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "GRADIENT",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            textAlign = TextAlign.Center
+                        val bgColor = try { Color(android.graphics.Color.parseColor(bgColHex)) } catch(e: Exception) { Color(0xFF3B82F6) }
+                        val textColor = try { Color(android.graphics.Color.parseColor(textColHex)) } catch(e: Exception) { Color.White }
+
+                        val isOutline = style == "outline"
+                        val isGhost = style == "ghost"
+                        val isGrad = style == "gradient"
+
+                        val interactionSource = remember { MutableInteractionSource() }
+                        val isPressed by interactionSource.collectIsPressedAsState()
+                        val isHovered by interactionSource.collectIsHoveredAsState()
+                        val isEffectActive = isPressed || isHovered
+
+                        val scaleFactor = animateFloatAsState(
+                            targetValue = if (isEffectActive && hoverFx == "scale") 1.08f else 1.0f,
+                            label = "scale"
                         )
-                    }
-                }
-                "button" -> {
-                    val label = viewModel.getStr("button_label", settings)
-                    val style = viewModel.getStr("button_style", settings)
-                    val bgColHex = viewModel.getStr("button_bg_color", settings)
-                    val textColHex = viewModel.getStr("button_text_color", settings)
-                    val radius = viewModel.getFloat("button_radius", settings)
-                    val fSize = viewModel.getFloat("button_font_size", settings)
-                    val padH = viewModel.getFloat("button_padding_h", settings)
-                    val padV = viewModel.getFloat("button_padding_v", settings)
+                        val opacityVal = animateFloatAsState(
+                            targetValue = if (isEffectActive && hoverFx == "lighten") 0.75f else 1.0f,
+                            label = "opacity"
+                        )
+                        val shadowElevation = animateFloatAsState(
+                            targetValue = if (isEffectActive && hoverFx == "shadow") 12f else 0f,
+                            label = "shadow"
+                        )
 
-                    val bgColor = try { Color(android.graphics.Color.parseColor(bgColHex)) } catch(e: Exception) { Color(0xFF3B82F6) }
-                    val textColor = try { Color(android.graphics.Color.parseColor(textColHex)) } catch(e: Exception) { Color.White }
-
-                    val isOutline = style == "outline"
-                    val isGhost = style == "ghost"
-                    val isGrad = style == "gradient"
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(radius.dp))
-                            .then(
-                                when {
-                                    isOutline -> Modifier.border(2.dp, bgColor, RoundedCornerShape(radius.dp))
-                                    isGrad -> Modifier.background(
-                                        Brush.linearGradient(colors = listOf(bgColor, Color(0xFF555555)))
-                                    )
-                                    isGhost -> Modifier
-                                    else -> Modifier.background(bgColor)
-                                }
+                        Box(
+                            modifier = Modifier
+                                .graphicsLayer(
+                                    scaleX = scaleFactor.value,
+                                    scaleY = scaleFactor.value,
+                                    alpha = opacityVal.value
+                                )
+                                .shadow(
+                                    elevation = shadowElevation.value.dp,
+                                    shape = RoundedCornerShape(radius.dp),
+                                    clip = false
+                                )
+                                .clip(RoundedCornerShape(radius.dp))
+                                .then(
+                                    when {
+                                        isOutline -> Modifier.border(2.dp, bgColor, RoundedCornerShape(radius.dp))
+                                        isGrad -> Modifier.background(
+                                            Brush.linearGradient(colors = listOf(bgColor, Color(0xFF555555)))
+                                        )
+                                        isGhost -> Modifier
+                                        else -> Modifier.background(bgColor)
+                                    }
+                                )
+                                .clickable(
+                                    interactionSource = interactionSource,
+                                    indication = androidx.compose.foundation.LocalIndication.current
+                                ) { /* Simulate action click */ }
+                                .padding(horizontal = padH.dp, vertical = padV.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                color = if (isOutline || isGhost) bgColor else textColor,
+                                fontSize = fSize.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold
                             )
-                            .clickable { /* Simulate hover/click ripple */ }
-                            .padding(horizontal = padH.dp, vertical = padV.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = label,
-                            color = if (isOutline || isGhost) bgColor else textColor,
-                            fontSize = fSize.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
+                        }
+                    }
+                    "ticker" -> {
+                        val itemsString = viewModel.getStr("ticker_items", settings)
+                        val tickerBg = viewModel.getStr("ticker_bg_color", settings)
+                        val tickerText = viewModel.getStr("ticker_text_color", settings)
+                        val fSize = viewModel.getFloat("ticker_font_size", settings)
+                        val gap = viewModel.getFloat("ticker_gap", settings)
+
+                        val bgCol = try { Color(android.graphics.Color.parseColor(tickerBg)) } catch(e: Exception) { Color(0xFF3B82F6) }
+                        val textCol = try { Color(android.graphics.Color.parseColor(tickerText)) } catch(e: Exception) { Color.White }
+
+                        val itemsList = itemsString.split("\n").filter { it.trim().isNotEmpty() }
+                        val marqueeString = if (itemsList.isNotEmpty()) {
+                            (itemsList + itemsList).joinToString(" ".repeat((gap / 6f).toInt().coerceAtLeast(3)))
+                        } else {
+                            "No Ticker Items"
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(bgCol)
+                                .padding(vertical = 12.dp, horizontal = 8.dp)
+                        ) {
+                            Text(
+                                text = marqueeString,
+                                color = textCol,
+                                fontSize = fSize.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                modifier = Modifier.horizontalScroll(rememberScrollState()) // Simulates running ticker smoothly on click-drag or auto
+                            )
+                        }
+                    }
+                    "loader" -> {
+                        LoaderPreview(
+                            style = viewModel.getStr("loader_style", settings),
+                            colorHex = viewModel.getStr("loader_color", settings),
+                            size = viewModel.getFloat("loader_size", settings),
+                            speed = viewModel.getFloat("loader_speed", settings),
+                            strokeWidth = viewModel.getFloat("loader_stroke", settings)
                         )
                     }
-                }
-                "ticker" -> {
-                    val itemsString = viewModel.getStr("ticker_items", settings)
-                    val tickerBg = viewModel.getStr("ticker_bg_color", settings)
-                    val tickerText = viewModel.getStr("ticker_text_color", settings)
-                    val fSize = viewModel.getFloat("ticker_font_size", settings)
-                    val gap = viewModel.getFloat("ticker_gap", settings)
-
-                    val bgCol = try { Color(android.graphics.Color.parseColor(tickerBg)) } catch(e: Exception) { Color(0xFF3B82F6) }
-                    val textCol = try { Color(android.graphics.Color.parseColor(tickerText)) } catch(e: Exception) { Color.White }
-
-                    val itemsList = itemsString.split("\n").filter { it.trim().isNotEmpty() }
-                    val marqueeString = if (itemsList.isNotEmpty()) {
-                        (itemsList + itemsList).joinToString(" ".repeat((gap / 6f).toInt().coerceAtLeast(3)))
-                    } else {
-                        "No Ticker Items"
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(bgCol)
-                            .padding(vertical = 12.dp, horizontal = 8.dp)
-                    ) {
-                        Text(
-                            text = marqueeString,
-                            color = textCol,
-                            fontSize = fSize.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            modifier = Modifier.horizontalScroll(rememberScrollState()) // Simulates running ticker smoothly on click-drag or auto
-                        )
-                    }
-                }
-                "loader" -> {
-                    LoaderPreview(
-                        style = viewModel.getStr("loader_style", settings),
-                        colorHex = viewModel.getStr("loader_color", settings),
-                        size = viewModel.getFloat("loader_size", settings),
-                        speed = viewModel.getFloat("loader_speed", settings),
-                        strokeWidth = viewModel.getFloat("loader_stroke", settings)
-                    )
-                }
-                "guide" -> {
-                    GuidelinesPreviewSection()
                 }
             }
         }
@@ -919,11 +1365,27 @@ fun LivePreviewBox(
 }
 
 @Composable
-fun GuidelinesPreviewSection() {
+fun GuidelinesPreviewSection(viewModel: MainViewModel) {
+    val scrollState = rememberScrollState()
+    val selectedSection by viewModel.selectedGuideSection.collectAsState()
+
+    LaunchedEffect(selectedSection) {
+        if (selectedSection > 0) {
+            val targetScroll = when (selectedSection) {
+                1 -> 0
+                2 -> 620
+                3 -> 1240
+                else -> 0
+            }
+            scrollState.animateScrollTo(targetScroll)
+            viewModel.selectGuideSection(0)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
@@ -1002,10 +1464,20 @@ fun GuidelinesPreviewSection() {
 fun CodeOutputSection(
     activeTab: String,
     activeOutputText: String,
+    onValueChange: (String) -> Unit,
     onTabSelect: (String) -> Unit,
     onCopyClick: () -> Unit,
+    onResetClick: () -> Unit,
+    onExportClick: () -> Unit,
+    hasCustom: Boolean,
     modifier: Modifier = Modifier
 ) {
+    var textVal by remember { mutableStateOf(activeOutputText) }
+
+    LaunchedEffect(activeOutputText) {
+        textVal = activeOutputText
+    }
+
     Column(
         modifier = modifier.background(Color(0xFF121212))
     ) {
@@ -1040,13 +1512,47 @@ fun CodeOutputSection(
                 }
             }
 
-            IconButton(onClick = onCopyClick) {
-                Icon(
-                    imageVector = Icons.Default.ContentCopy,
-                    contentDescription = "Copy Output",
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(end = 8.dp)
+            ) {
+                if (hasCustom) {
+                    Text(
+                        text = "[ RESET ]",
+                        color = Color(0xFFEF4444),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clickable { onResetClick() }
+                            .padding(horizontal = 8.dp, vertical = 10.dp)
+                            .testTag("reset_code_button")
+                    )
+                }
+
+                Text(
+                    text = "[ EXPORT ]",
+                    color = Color(0xFF4ADE80),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clickable { onExportClick() }
+                        .padding(horizontal = 8.dp, vertical = 10.dp)
+                        .testTag("export_code_button")
                 )
+
+                IconButton(
+                    onClick = onCopyClick,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Copy Output",
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             }
         }
 
@@ -1056,15 +1562,31 @@ fun CodeOutputSection(
                 .fillMaxWidth()
                 .weight(1f)
                 .background(Color(0xFF070707))
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
         ) {
-            Text(
-                text = activeOutputText,
-                color = Color(0xFF4ADE80),
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                lineHeight = 16.sp
+            OutlinedTextField(
+                value = textVal,
+                onValueChange = { newVal ->
+                    textVal = newVal
+                    onValueChange(newVal)
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("code_editor_text_field"),
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    color = Color(0xFF4ADE80),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 16.sp
+                ),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedContainerColor = Color(0xFF070707),
+                    unfocusedContainerColor = Color(0xFF070707),
+                    focusedTextColor = Color(0xFF4ADE80),
+                    unfocusedTextColor = Color(0xFF4ADE80)
+                ),
+                shape = RoundedCornerShape(0.dp)
             )
         }
     }
@@ -1193,40 +1715,19 @@ fun ControlsPanel(
                 val urls = sliderUrlsString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
                 urls.forEachIndexed { index, url ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = url,
-                            onValueChange = { newVal ->
-                                val list = urls.toMutableList()
-                                list[index] = newVal
-                                viewModel.updateSetting("slider_urls", list.joinToString(","))
-                            },
-                            placeholder = { Text("Image URL", color = Color.Gray, fontFamily = FontFamily.Monospace) },
-                            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                            modifier = Modifier.weight(1f),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color.White,
-                                unfocusedBorderColor = Color(0xFF222222),
-                                focusedContainerColor = Color.Black,
-                                unfocusedContainerColor = Color.Black
-                            ),
-                            shape = RoundedCornerShape(8.dp)
-                        )
-
-                        IconButton(
-                            onClick = {
-                                val list = urls.toMutableList()
-                                list.removeAt(index)
-                                viewModel.updateSetting("slider_urls", list.joinToString(","))
-                            }
-                        ) {
-                            Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Slot", tint = Color(0xFFEF4444))
+                    SliderUrlRow(
+                        url = url,
+                        onValueChange = { newVal ->
+                            val list = urls.toMutableList()
+                            list[index] = newVal
+                            viewModel.updateSetting("slider_urls", list.joinToString(","))
+                        },
+                        onDeleteClick = {
+                            val list = urls.toMutableList()
+                            list.removeAt(index)
+                            viewModel.updateSetting("slider_urls", list.joinToString(","))
                         }
-                    }
+                    )
                 }
 
                 // Add Slot
@@ -1730,20 +2231,12 @@ fun ControlsPanel(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold
                 )
-                OutlinedTextField(
+                StatefulTextField(
                     value = viewModel.getStr("ticker_items", settings),
                     onValueChange = { viewModel.updateSetting("ticker_items", it) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(110.dp),
-                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.White,
-                        unfocusedBorderColor = Color(0xFF222222),
-                        focusedContainerColor = Color.Black,
-                        unfocusedContainerColor = Color.Black
-                    ),
-                    shape = RoundedCornerShape(8.dp)
+                        .height(110.dp)
                 )
 
                 // Speed
@@ -1956,11 +2449,11 @@ fun ControlsPanel(
                     "1. Introduction",
                     "2. Using Generators",
                     "3. Persistent SQLite"
-                ).forEach { heading ->
+                ).forEachIndexed { index, heading ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { /* Scroll is handled by viewport! */ },
+                            .clickable { viewModel.selectGuideSection(index + 1) },
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1C)),
                         shape = RoundedCornerShape(8.dp)
                     ) {
@@ -2089,7 +2582,7 @@ fun ColorPickerControl(
         Spacer(modifier = Modifier.height(6.dp))
 
         // Custom Hex input
-        OutlinedTextField(
+        StatefulTextField(
             value = currentColor,
             onValueChange = { newVal ->
                 if (newVal.startsWith("#") && newVal.length <= 7) {
@@ -2101,13 +2594,6 @@ fun ColorPickerControl(
             placeholder = { Text("#3B82F6", color = Color.Gray, fontFamily = FontFamily.Monospace) },
             textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 13.sp),
             modifier = Modifier.fillMaxWidth(),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color.White,
-                unfocusedBorderColor = Color(0xFF222222),
-                focusedContainerColor = Color.Black,
-                unfocusedContainerColor = Color.Black
-            ),
-            shape = RoundedCornerShape(8.dp),
             leadingIcon = { Icon(imageVector = Icons.Default.Palette, contentDescription = null, tint = Color(0xFF888888), modifier = Modifier.size(16.dp)) }
         )
 
@@ -2157,19 +2643,11 @@ fun TextInputControl(
             fontWeight = FontWeight.Bold
         )
         Spacer(modifier = Modifier.height(6.dp))
-        OutlinedTextField(
+        StatefulTextField(
             value = value,
             onValueChange = onValueChange,
             placeholder = { Text(placeholder, color = Color.Gray, fontFamily = FontFamily.Monospace) },
-            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-            modifier = Modifier.fillMaxWidth(),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color.White,
-                unfocusedBorderColor = Color(0xFF222222),
-                focusedContainerColor = Color.Black,
-                unfocusedContainerColor = Color.Black
-            ),
-            shape = RoundedCornerShape(8.dp)
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
@@ -2224,6 +2702,189 @@ fun PrivacyPolicyDialog(onDismiss: () -> Unit) {
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White)
                 ) {
                     Text(text = "CLOSE", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StatefulTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: @Composable (() -> Unit)? = null,
+    leadingIcon: @Composable (() -> Unit)? = null,
+    textStyle: androidx.compose.ui.text.TextStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+    colors: androidx.compose.material3.TextFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = Color.White,
+        unfocusedBorderColor = Color(0xFF222222),
+        focusedContainerColor = Color(0xFF141414),
+        unfocusedContainerColor = Color(0xFF070707),
+        focusedTextColor = Color.White,
+        unfocusedTextColor = Color.White
+    ),
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(8.dp),
+    singleLine: Boolean = false,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE
+) {
+    var textVal by remember { mutableStateOf(value) }
+    LaunchedEffect(value) {
+        if (textVal != value) {
+            textVal = value
+        }
+    }
+    OutlinedTextField(
+        value = textVal,
+        onValueChange = { newVal ->
+            textVal = newVal
+            onValueChange(newVal)
+        },
+        modifier = modifier,
+        placeholder = placeholder,
+        leadingIcon = leadingIcon,
+        textStyle = textStyle,
+        colors = colors,
+        shape = shape,
+        singleLine = singleLine,
+        maxLines = maxLines
+    )
+}
+
+@Composable
+fun SliderUrlRow(
+    url: String,
+    onValueChange: (String) -> Unit,
+    onDeleteClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        StatefulTextField(
+            value = url,
+            onValueChange = onValueChange,
+            placeholder = { Text("Image URL", color = Color.Gray, fontFamily = FontFamily.Monospace) },
+            modifier = Modifier.weight(1f)
+        )
+
+        IconButton(onClick = onDeleteClick) {
+            Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Slot", tint = Color(0xFFEF4444))
+        }
+    }
+}
+
+@Composable
+fun ExportProjectBundleDialog(
+    css: String,
+    html: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val fullBundleText = remember(css, html) {
+        """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>CSS Toolkit Export</title>
+          <style>
+            /* ==========================================
+               CSS generated by CSS Toolkit
+               ========================================== */
+        $css
+          </style>
+        </head>
+        <body style="background: #121212; color: #ffffff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; font-family: system-ui, -apple-system, sans-serif; padding: 24px; box-sizing: border-box;">
+          <div style="width: 100%; max-width: 800px; background: #1a1a1a; padding: 24px; border-radius: 12px; border: 1px solid #333333; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+        $html
+          </div>
+        </body>
+        </html>
+        """.trimIndent()
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF121212)),
+            shape = RoundedCornerShape(12.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF222222))
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .fillMaxHeight(0.85f)
+            ) {
+                Text(
+                    text = "EXPORT CODEBASE BUNDLE",
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Text(
+                    text = "This bundles your customized CSS with a matching responsive HTML body template into a standalone index.html file ready to run in any browser.",
+                    color = Color.Gray,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 15.sp
+                )
+
+                HorizontalDivider(color = Color(0xFF222222), modifier = Modifier.padding(vertical = 12.dp))
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(Color(0xFF070707), RoundedCornerShape(8.dp))
+                        .verticalScroll(rememberScrollState())
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = fullBundleText,
+                        color = Color(0xFF4ADE80),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = 15.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = ClipData.newPlainText("HTML/CSS Bundle", fullBundleText)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "Standalone index.html Copied!", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4ADE80))
+                    ) {
+                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy Bundle", tint = Color.Black, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = "COPY BUNDLE", color = Color.Black, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF444444))
+                    ) {
+                        Text(text = "CLOSE", color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                    }
                 }
             }
         }

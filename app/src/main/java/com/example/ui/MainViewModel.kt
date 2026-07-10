@@ -138,6 +138,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateSetting(key: String, value: String) {
         viewModelScope.launch {
             repository.saveSetting(key, value)
+            val tool = _activeTool.value
+            // If the key starts with the tool name prefix (e.g. "glass_") but is not custom code,
+            // reset the custom flags so dragging a slider instantly regenerates code dynamically.
+            if (key.startsWith("${tool}_") && !key.contains("custom")) {
+                repository.saveSetting("has_custom_css_$tool", "false")
+                repository.saveSetting("has_custom_html_$tool", "false")
+            }
         }
     }
 
@@ -145,4 +152,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun getStr(key: String, settings: Map<String, String>): String = settings[key] ?: defaults[key] ?: ""
     fun getFloat(key: String, settings: Map<String, String>): Float = (settings[key] ?: defaults[key] ?: "0").toFloatOrNull() ?: 0f
     fun getBool(key: String, settings: Map<String, String>): Boolean = (settings[key] ?: defaults[key] ?: "false").toBoolean()
+
+    private val _selectedGuideSection = MutableStateFlow(0)
+    val selectedGuideSection: StateFlow<Int> = _selectedGuideSection
+
+    fun selectGuideSection(section: Int) {
+        _selectedGuideSection.value = section
+    }
 }

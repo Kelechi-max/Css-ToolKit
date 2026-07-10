@@ -63,7 +63,7 @@ fun InteractiveImageSlider(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(16f / 9f)
+            .aspectRatio(16f / 9f, matchHeightConstraintsFirst = true)
             .clip(RoundedCornerShape(radius.dp))
             .background(Color(0xFF1E1E1E)),
         contentAlignment = Alignment.Center
@@ -84,16 +84,16 @@ fun InteractiveImageSlider(
             }
         }
 
-        // Navigation Arrows
+        // Navigation Arrows (Upgraded to 48dp Touch Target and Perfectly Centered)
         if (showArrows && allUrls.size > 1) {
             // Prev Arrow
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .padding(start = 12.dp)
-                    .size(36.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.5f))
+                    .background(Color.Black.copy(alpha = 0.6f))
                     .clickable {
                         activeIndex = (activeIndex - 1 + allUrls.size) % allUrls.size
                     },
@@ -103,7 +103,7 @@ fun InteractiveImageSlider(
                     imageVector = Icons.AutoMirrored.Default.KeyboardArrowLeft,
                     contentDescription = "Previous Slide",
                     tint = Color.White,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(28.dp)
                 )
             }
 
@@ -112,9 +112,9 @@ fun InteractiveImageSlider(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .padding(end = 12.dp)
-                    .size(36.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.5f))
+                    .background(Color.Black.copy(alpha = 0.6f))
                     .clickable {
                         activeIndex = (activeIndex + 1) % allUrls.size
                     },
@@ -124,7 +124,7 @@ fun InteractiveImageSlider(
                     imageVector = Icons.AutoMirrored.Default.KeyboardArrowRight,
                     contentDescription = "Next Slide",
                     tint = Color.White,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(28.dp)
                 )
             }
         }
